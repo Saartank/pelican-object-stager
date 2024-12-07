@@ -1,0 +1,4 @@
+server:
+  port: 8181
+pelican:
+  binary_path: /workspaces/dec_02/pelican
