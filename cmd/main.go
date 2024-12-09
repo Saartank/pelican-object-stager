@@ -7,6 +7,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 func main() {
@@ -63,6 +64,12 @@ func main() {
 
 	cobra.OnInitialize(func() {
 		config.LoadConfig("/etc/pelican/config.yaml") // Default config location
+		logLevel := viper.GetString("log_level")
+		level, err := logrus.ParseLevel(logLevel)
+		if err != nil {
+			logrus.Fatalf("Invalid log level in config: %s", err)
+		}
+		logrus.SetLevel(level)
 	})
 
 	if err := rootCmd.Execute(); err != nil {

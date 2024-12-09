@@ -1,4 +1,11 @@
 server:
   port: 8181
+
 pelican:
   binary_path: /workspaces/dec_02/pelican
+
+staging:
+  temp_destination: /tmp/junk-dec9
+  workers: 5
+
+log_level: debug
