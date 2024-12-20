@@ -2,13 +2,17 @@ package object
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
-	"github.com/spf13/viper"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/pelicanplatform/pelicanobjectstager/config"
+	"github.com/pelicanplatform/pelicanobjectstager/db"
 	"github.com/pelicanplatform/pelicanobjectstager/logger"
 	"github.com/pelicanplatform/pelicanobjectstager/pelican"
 )
@@ -104,11 +108,12 @@ func HandleStage(c *gin.Context) {
 func stagingWorker(entries <-chan RequestEntry, targetCache string, results chan<- map[string]interface{}, wg *sync.WaitGroup, jobID string) {
 	defer wg.Done()
 
-	// Get temp destination from configuration
-	tempDestination := viper.GetString("staging.temp_destination")
+	tempObjectName := uuid.New().String()
+	tempDestination := config.AppConfig.Staging.TempDestination
+	objectDestination := filepath.Join(tempDestination, tempObjectName)
 
 	for entry := range entries {
-		args := []string{"object", "get", entry.RequestURL, tempDestination}
+		args := []string{"object", "get", entry.RequestURL, objectDestination}
 
 		if entry.Parameters != "" {
 			parameterArgs := strings.Fields(entry.Parameters) // Split by space
@@ -124,10 +129,11 @@ func stagingWorker(entries <-chan RequestEntry, targetCache string, results chan
 			zap.String("parameters", entry.Parameters),
 			zap.Strings("parsed_args", args),
 			zap.String("temp_destination", tempDestination),
+			zap.String("local_object_destination", objectDestination),
 		)
 
 		// Invoke the binary
-		stdout, stderr, err := pelican.InvokePelicanBinary(args)
+		stdout, stderr, exitCode, err := pelican.InvokePelicanBinary(args)
 
 		// Prepare result
 		if err != nil {
@@ -142,23 +148,63 @@ func stagingWorker(entries <-chan RequestEntry, targetCache string, results chan
 				zap.String("request_url", entry.RequestURL),
 				zap.String("stdout", stdout),
 				zap.String("stderr", stderr),
+				zap.String("local_object_destination", objectDestination),
 				zap.String("error", errorMessage),
+				zap.Int("pelican_client_exit_code", exitCode),
 			)
 			results <- map[string]interface{}{
 				"request_url": entry.RequestURL,
 				"result":      errorMessage,
 			}
 		} else {
-			log.Info("Entry processed successfully",
-				zap.String("job_id", jobID),
-				zap.String("request_url", entry.RequestURL),
-				zap.String("stdout", stdout),
-				zap.String("stderr", stderr),
-			)
-			results <- map[string]interface{}{
-				"request_url": entry.RequestURL,
-				"result":      "success",
+			objectInfo, err := os.Stat(objectDestination)
+			if err != nil {
+				log.Error("Failed to process entry",
+					zap.String("job_id", jobID),
+					zap.String("request_url", entry.RequestURL),
+					zap.String("stdout", stdout),
+					zap.String("stderr", stderr),
+					zap.String("local_object_destination", objectDestination),
+					zap.String("error", err.Error()),
+					zap.Int("pelican_client_exit_code", exitCode),
+				)
+				results <- map[string]interface{}{
+					"request_url": entry.RequestURL,
+					"result":      err.Error(),
+				}
 			}
+			objectSize := objectInfo.Size()
+
+			err = db.InsertStagingRecord(entry.RequestURL, targetCache, jobID, objectSize, exitCode, stdout, stderr)
+			if err == nil {
+				log.Info("Entry processed successfully",
+					zap.String("job_id", jobID),
+					zap.String("request_url", entry.RequestURL),
+					zap.Int64("object_size_in_bytes", objectSize),
+					zap.String("stdout", stdout),
+					zap.String("stderr", stderr),
+					zap.Int("pelican_client_exit_code", exitCode),
+				)
+				results <- map[string]interface{}{
+					"request_url": entry.RequestURL,
+					"result":      "success",
+				}
+			} else {
+				log.Error("Failed to insert staging record",
+					zap.String("job_id", jobID),
+					zap.String("request_url", entry.RequestURL),
+					zap.Int64("object_size_in_bytes", objectSize),
+					zap.String("stdout", stdout),
+					zap.String("stderr", stderr),
+					zap.Int("pelican_client_exit_code", exitCode),
+					zap.Error(err),
+				)
+				results <- map[string]interface{}{
+					"request_url": entry.RequestURL,
+					"result":      err.Error(),
+				}
+			}
+
 		}
 	}
 }

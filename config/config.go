@@ -23,6 +23,11 @@ type Config struct {
 		BinaryPath string `mapstructure:"binary_path"`
 	} `mapstructure:"pelican"`
 
+	Staging struct {
+		TempDestination string `mapstructure:"temp_destination"`
+		Workers         int    `mapstructure:"workers"`
+	}
+
 	Database struct {
 		Location string `mapstructure:"location"`
 	} `mapstructure:"database"`

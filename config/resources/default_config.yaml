@@ -9,3 +9,6 @@ staging:
   workers: 5
 
 log_level: debug
+
+database:
+  location: /workspaces/dec_02/db.sqlite

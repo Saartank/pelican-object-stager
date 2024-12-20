@@ -41,10 +41,11 @@ func handleStartBinary(c *gin.Context) {
 	}
 
 	// Invoke the binary with the arguments
-	stdout, stderr, err := pelican.InvokePelicanBinary(args)
+	stdout, stderr, exitCode, err := pelican.InvokePelicanBinary(args)
 	if stderr != "" {
 		log.Error("PelicanBinary stderr",
 			zap.String("job_id", jobID.(string)),
+			zap.Int("pelican_client_exit_code", exitCode),
 			zap.String("stderr", stderr),
 		)
 	}
@@ -53,14 +54,16 @@ func handleStartBinary(c *gin.Context) {
 	if err != nil {
 		log.Error("Failed to execute PelicanBinary",
 			zap.String("job_id", jobID.(string)),
+			zap.Int("pelican_client_exit_code", exitCode),
 			zap.Error(err),
 			zap.String("stderr", stderr),
 		)
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"job_id":  jobID, // Include Job ID
-			"error":   "Failed to execute PelicanBinary",
-			"details": err.Error(),
-			"stderr":  stderr,
+			"job_id":                   jobID, // Include Job ID
+			"pelican_client_exit_code": exitCode,
+			"error":                    "Failed to execute PelicanBinary",
+			"details":                  err.Error(),
+			"stderr":                   stderr,
 		})
 		return
 	}
@@ -68,12 +71,14 @@ func handleStartBinary(c *gin.Context) {
 	// Log and return the successful output
 	log.Info("PelicanBinary executed successfully",
 		zap.String("job_id", jobID.(string)),
+		zap.Int("pelican_client_exit_code", exitCode),
 		zap.String("stdout", stdout),
 	)
 	c.JSON(http.StatusOK, gin.H{
-		"job_id":  jobID, // Include Job ID
-		"message": "PelicanBinary executed successfully",
-		"stdout":  stdout,
+		"job_id":                   jobID, // Include Job ID
+		"pelican_client_exit_code": exitCode,
+		"message":                  "PelicanBinary executed successfully",
+		"stdout":                   stdout,
 	})
 }
 
@@ -82,12 +87,13 @@ func handleHealthCheck(c *gin.Context) {
 	jobID, _ := c.Get("job_id")
 
 	// Run the `--version` command on the binary
-	stdout, stderr, err := pelican.InvokePelicanBinary([]string{"--version"})
+	stdout, stderr, exitCode, err := pelican.InvokePelicanBinary([]string{"--version"})
 
 	// Handle stderr if present
 	if stderr != "" {
 		log.Error("PelicanBinary stderr",
 			zap.String("job_id", jobID.(string)),
+			zap.Int("pelican_client_exit_code", exitCode),
 			zap.String("stderr", stderr),
 		)
 	}
@@ -96,15 +102,17 @@ func handleHealthCheck(c *gin.Context) {
 	if err != nil {
 		log.Error("Failed to execute PelicanBinary --version",
 			zap.String("job_id", jobID.(string)),
+			zap.Int("pelican_client_exit_code", exitCode),
 			zap.Error(err),
 			zap.String("stderr", stderr),
 		)
 		c.JSON(500, gin.H{
-			"job_id":  jobID, // Include Job ID
-			"status":  "error",
-			"message": "PelicanBinary failed to execute",
-			"error":   err.Error(),
-			"stderr":  stderr,
+			"job_id":                   jobID, // Include Job ID
+			"pelican_client_exit_code": exitCode,
+			"status":                   "error",
+			"message":                  "PelicanBinary failed to execute",
+			"error":                    err.Error(),
+			"stderr":                   stderr,
 		})
 		return
 	}
@@ -114,6 +122,7 @@ func handleHealthCheck(c *gin.Context) {
 	log.Info("Health check successful",
 		zap.String("job_id", jobID.(string)),
 		zap.String("version", version),
+		zap.Int("pelican_client_exit_code", exitCode),
 	)
 	c.JSON(200, gin.H{
 		"job_id":  jobID, // Include Job ID

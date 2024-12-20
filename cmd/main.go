@@ -4,6 +4,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/pelicanplatform/pelicanobjectstager/config"
+	"github.com/pelicanplatform/pelicanobjectstager/db"
 	"github.com/pelicanplatform/pelicanobjectstager/logger"
 	"github.com/pelicanplatform/pelicanobjectstager/pelican"
 	"github.com/pelicanplatform/pelicanobjectstager/server"
@@ -33,23 +34,19 @@ func main() {
 		Short: "Invoke the PelicanBinary with the given arguments",
 		Args:  cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			stdout, stderr, err := pelican.InvokePelicanBinary(args)
+			stdout, stderr, exitCode, err := pelican.InvokePelicanBinary(args)
 
-			// Log stderr if present
-			if stderr != "" {
-				logger.Base().Error("PelicanBinary stderr", zap.String("stderr", stderr))
-			}
+			// Consolidated logging
+			logger.Base().Info("PelicanBinary execution details",
+				zap.String("stdout", stdout),
+				zap.String("stderr", stderr),
+				zap.Int("pelican_client_exit_code", exitCode),
+				zap.Error(err),
+			)
 
-			// Handle errors
+			// Handle errors after logging
 			if err != nil {
 				logger.Base().Fatal("Failed to invoke PelicanBinary", zap.Error(err))
-			}
-
-			// Log stdout if present
-			if stdout != "" {
-				logger.Base().Info("PelicanBinary stdout", zap.String("stdout", stdout))
-			} else {
-				logger.Base().Info("PelicanBinary executed successfully with no output")
 			}
 		},
 		DisableFlagParsing: true, // Forward unparsed flags directly to the binary
@@ -59,7 +56,8 @@ func main() {
 	rootCmd.AddCommand(pelicanCmd)
 
 	cobra.OnInitialize(func() {
-		config.LoadConfig("/etc/pelican/config.yaml") // Default config location
+		config.LoadConfig("/etc/pelican/config.yaml")
+		db.InitializeDB()
 	})
 
 	if err := rootCmd.Execute(); err != nil {
