@@ -1,21 +1,17 @@
 package main
 
 import (
+	"go.uber.org/zap"
+
 	"github.com/pelicanplatform/pelicanobjectstager/config"
+	"github.com/pelicanplatform/pelicanobjectstager/logger"
 	"github.com/pelicanplatform/pelicanobjectstager/pelican"
 	"github.com/pelicanplatform/pelicanobjectstager/server"
 
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 func main() {
-	logrus.SetFormatter(&logrus.TextFormatter{
-		TimestampFormat: "2006-01-02 15:04:05",
-		FullTimestamp:   true,
-	})
-
 	var rootCmd = &cobra.Command{
 		Use:   "github.com/pelicanplatform/pelicanobjectstager",
 		Short: "Wrapper for managing Pelican binaries",
@@ -26,7 +22,7 @@ func main() {
 		Use:   "server",
 		Short: "Start the github.com/pelicanplatform/pelicanobjectstager daemon",
 		Run: func(cmd *cobra.Command, args []string) {
-			logrus.Info("Starting github.com/pelicanplatform/pelicanobjectstager daemon...")
+			logger.Base().Info("Starting pelicanobjectstager daemon...")
 			server.StartServer()
 		},
 	}
@@ -41,19 +37,19 @@ func main() {
 
 			// Log stderr if present
 			if stderr != "" {
-				logrus.Errorf("PelicanBinary stderr: %s", stderr)
+				logger.Base().Error("PelicanBinary stderr", zap.String("stderr", stderr))
 			}
 
 			// Handle errors
 			if err != nil {
-				logrus.Fatalf("Failed to invoke PelicanBinary: %v", err)
+				logger.Base().Fatal("Failed to invoke PelicanBinary", zap.Error(err))
 			}
 
 			// Log stdout if present
 			if stdout != "" {
-				logrus.Infof("PelicanBinary stdout: %s", stdout)
+				logger.Base().Info("PelicanBinary stdout", zap.String("stdout", stdout))
 			} else {
-				logrus.Info("PelicanBinary executed successfully with no output")
+				logger.Base().Info("PelicanBinary executed successfully with no output")
 			}
 		},
 		DisableFlagParsing: true, // Forward unparsed flags directly to the binary
@@ -64,15 +60,9 @@ func main() {
 
 	cobra.OnInitialize(func() {
 		config.LoadConfig("/etc/pelican/config.yaml") // Default config location
-		logLevel := viper.GetString("log_level")
-		level, err := logrus.ParseLevel(logLevel)
-		if err != nil {
-			logrus.Fatalf("Invalid log level in config: %s", err)
-		}
-		logrus.SetLevel(level)
 	})
 
 	if err := rootCmd.Execute(); err != nil {
-		logrus.Fatal(err)
+		logger.Base().Error("Failed to initialize", zap.Error(err))
 	}
 }

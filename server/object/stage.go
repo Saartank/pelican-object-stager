@@ -6,10 +6,15 @@ import (
 	"sync"
 
 	"github.com/gin-gonic/gin"
-	"github.com/pelicanplatform/pelicanobjectstager/pelican"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"go.uber.org/zap"
+
+	"github.com/pelicanplatform/pelicanobjectstager/logger"
+	"github.com/pelicanplatform/pelicanobjectstager/pelican"
 )
+
+// Initialize a zap logger for the `object` component
+var log = logger.With(zap.String("component", "object"))
 
 // StageRequest represents the input structure for the /object/stage endpoint
 type StageRequest struct {
@@ -26,8 +31,17 @@ type RequestEntry struct {
 func HandleStage(c *gin.Context) {
 	var input StageRequest
 
+	// Extract job_id from the context
+	jobID := c.GetString("job_id")
+	if jobID == "" {
+		log.Error("Missing job_id in context")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing job_id in context"})
+		return
+	}
+
 	// Parse and validate JSON payload
 	if err := c.ShouldBindJSON(&input); err != nil {
+		log.Error("Failed to bind JSON input", zap.String("job_id", jobID), zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -41,7 +55,7 @@ func HandleStage(c *gin.Context) {
 	// Start staging workers
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		go stagingWorker(entryChan, input.TargetCache, resultsChan, &wg)
+		go stagingWorker(entryChan, input.TargetCache, resultsChan, &wg, jobID)
 	}
 
 	// Send entries to the workers
@@ -70,12 +84,16 @@ func HandleStage(c *gin.Context) {
 
 	// Determine response status
 	if hasErrors {
+		log.Warn("Staging completed with errors", zap.String("job_id", jobID))
 		c.JSON(http.StatusInternalServerError, gin.H{
+			"job_id":  jobID,
 			"message": "Staging completed with errors",
 			"results": results,
 		})
 	} else {
+		log.Info("Staging completed successfully", zap.String("job_id", jobID))
 		c.JSON(http.StatusOK, gin.H{
+			"job_id":  jobID,
 			"message": "Staging completed successfully",
 			"results": results,
 		})
@@ -83,7 +101,7 @@ func HandleStage(c *gin.Context) {
 }
 
 // stagingWorker processes a single entry and sends results to channels
-func stagingWorker(entries <-chan RequestEntry, targetCache string, results chan<- map[string]interface{}, wg *sync.WaitGroup) {
+func stagingWorker(entries <-chan RequestEntry, targetCache string, results chan<- map[string]interface{}, wg *sync.WaitGroup, jobID string) {
 	defer wg.Done()
 
 	// Get temp destination from configuration
@@ -100,12 +118,13 @@ func stagingWorker(entries <-chan RequestEntry, targetCache string, results chan
 		args = append(args, "--cache", targetCache)
 
 		// Log debug information
-		logrus.WithFields(logrus.Fields{
-			"request_url":      entry.RequestURL,
-			"parameters":       entry.Parameters,
-			"parsed_args":      args,
-			"temp_destination": tempDestination,
-		}).Debug("Processing entry")
+		log.Debug("Processing entry",
+			zap.String("job_id", jobID),
+			zap.String("request_url", entry.RequestURL),
+			zap.String("parameters", entry.Parameters),
+			zap.Strings("parsed_args", args),
+			zap.String("temp_destination", tempDestination),
+		)
 
 		// Invoke the binary
 		stdout, stderr, err := pelican.InvokePelicanBinary(args)
@@ -118,22 +137,24 @@ func stagingWorker(entries <-chan RequestEntry, targetCache string, results chan
 				errorMessage = err.Error()
 			}
 
-			logrus.WithFields(logrus.Fields{
-				"request_url": entry.RequestURL,
-				"stdout":      stdout,
-				"stderr":      stderr,
-				"error":       errorMessage,
-			}).Error("Failed to process entry")
+			log.Error("Failed to process entry",
+				zap.String("job_id", jobID),
+				zap.String("request_url", entry.RequestURL),
+				zap.String("stdout", stdout),
+				zap.String("stderr", stderr),
+				zap.String("error", errorMessage),
+			)
 			results <- map[string]interface{}{
 				"request_url": entry.RequestURL,
 				"result":      errorMessage,
 			}
 		} else {
-			logrus.WithFields(logrus.Fields{
-				"request_url": entry.RequestURL,
-				"stdout":      stdout,
-				"stderr":      stderr,
-			}).Info("Entry processed successfully")
+			log.Info("Entry processed successfully",
+				zap.String("job_id", jobID),
+				zap.String("request_url", entry.RequestURL),
+				zap.String("stdout", stdout),
+				zap.String("stderr", stderr),
+			)
 			results <- map[string]interface{}{
 				"request_url": entry.RequestURL,
 				"result":      "success",

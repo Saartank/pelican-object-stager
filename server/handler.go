@@ -4,14 +4,16 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/pelicanplatform/pelicanobjectstager/pelican"
-
 	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
+
+	"github.com/pelicanplatform/pelicanobjectstager/pelican"
 )
 
-// handleStartBinary - Starts the binary with arguments from the request
 func handleStartBinary(c *gin.Context) {
+	// Retrieve the Job ID from the context
+	jobID, _ := c.Get("job_id")
+
 	// Define a struct to bind the JSON request body
 	type RequestBody struct {
 		Args []string `json:"args"` // Arguments to pass to the binary
@@ -20,8 +22,12 @@ func handleStartBinary(c *gin.Context) {
 	// Parse the JSON request body
 	var requestBody RequestBody
 	if err := c.ShouldBindJSON(&requestBody); err != nil {
-		logrus.Errorf("Failed to parse request body: %v", err)
+		log.Error("Failed to parse request body",
+			zap.String("job_id", jobID.(string)),
+			zap.Error(err),
+		)
 		c.JSON(http.StatusBadRequest, gin.H{
+			"job_id":  jobID, // Include Job ID
 			"error":   "Invalid request body",
 			"details": err.Error(),
 		})
@@ -37,13 +43,21 @@ func handleStartBinary(c *gin.Context) {
 	// Invoke the binary with the arguments
 	stdout, stderr, err := pelican.InvokePelicanBinary(args)
 	if stderr != "" {
-		logrus.Errorf("PelicanBinary stderr: %s", stderr)
+		log.Error("PelicanBinary stderr",
+			zap.String("job_id", jobID.(string)),
+			zap.String("stderr", stderr),
+		)
 	}
 
 	// Handle execution errors
 	if err != nil {
-		logrus.Errorf("Failed to execute PelicanBinary: %v", err)
+		log.Error("Failed to execute PelicanBinary",
+			zap.String("job_id", jobID.(string)),
+			zap.Error(err),
+			zap.String("stderr", stderr),
+		)
 		c.JSON(http.StatusInternalServerError, gin.H{
+			"job_id":  jobID, // Include Job ID
 			"error":   "Failed to execute PelicanBinary",
 			"details": err.Error(),
 			"stderr":  stderr,
@@ -52,27 +66,41 @@ func handleStartBinary(c *gin.Context) {
 	}
 
 	// Log and return the successful output
-	logrus.Infof("PelicanBinary executed successfully: %s", stdout)
+	log.Info("PelicanBinary executed successfully",
+		zap.String("job_id", jobID.(string)),
+		zap.String("stdout", stdout),
+	)
 	c.JSON(http.StatusOK, gin.H{
+		"job_id":  jobID, // Include Job ID
 		"message": "PelicanBinary executed successfully",
 		"stdout":  stdout,
 	})
 }
 
-// handleHealthCheck - Health check handler
 func handleHealthCheck(c *gin.Context) {
+	// Retrieve the Job ID from the context
+	jobID, _ := c.Get("job_id")
+
 	// Run the `--version` command on the binary
 	stdout, stderr, err := pelican.InvokePelicanBinary([]string{"--version"})
 
 	// Handle stderr if present
 	if stderr != "" {
-		logrus.Errorf("PelicanBinary stderr: %s", stderr)
+		log.Error("PelicanBinary stderr",
+			zap.String("job_id", jobID.(string)),
+			zap.String("stderr", stderr),
+		)
 	}
 
 	// Handle errors
 	if err != nil {
-		logrus.Errorf("Failed to execute PelicanBinary --version: %v", err)
+		log.Error("Failed to execute PelicanBinary --version",
+			zap.String("job_id", jobID.(string)),
+			zap.Error(err),
+			zap.String("stderr", stderr),
+		)
 		c.JSON(500, gin.H{
+			"job_id":  jobID, // Include Job ID
 			"status":  "error",
 			"message": "PelicanBinary failed to execute",
 			"error":   err.Error(),
@@ -83,8 +111,12 @@ func handleHealthCheck(c *gin.Context) {
 
 	// Process stdout for version information
 	version := strings.TrimSpace(stdout)
-	logrus.Infof("Health check successful: PelicanBinary version: %s", version)
+	log.Info("Health check successful",
+		zap.String("job_id", jobID.(string)),
+		zap.String("version", version),
+	)
 	c.JSON(200, gin.H{
+		"job_id":  jobID, // Include Job ID
 		"status":  "ok",
 		"message": "PelicanBinary is working",
 		"version": version,
