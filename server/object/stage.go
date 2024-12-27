@@ -17,7 +17,6 @@ import (
 	"github.com/pelicanplatform/pelicanobjectstager/pelican"
 )
 
-// Initialize a zap logger for the `object` component
 var log = logger.With(zap.String("component", "object"))
 
 // StageRequest represents the input structure for the /object/stage endpoint
@@ -43,15 +42,13 @@ func HandleStage(c *gin.Context) {
 		return
 	}
 
-	// Parse and validate JSON payload
 	if err := c.ShouldBindJSON(&input); err != nil {
 		log.Error("Failed to bind JSON input", zap.String("job_id", jobID), zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Worker pool setup
-	numWorkers := 5 // Configurable
+	numWorkers := config.AppConfig.Staging.Workers
 	entryChan := make(chan RequestEntry, len(input.Entries))
 	resultsChan := make(chan map[string]interface{}, len(input.Entries))
 	var wg sync.WaitGroup
@@ -72,7 +69,6 @@ func HandleStage(c *gin.Context) {
 	wg.Wait()
 	close(resultsChan)
 
-	// Collect results
 	results := make(map[string]interface{})
 	hasErrors := false
 
@@ -122,7 +118,6 @@ func stagingWorker(entries <-chan RequestEntry, targetCache string, results chan
 
 		args = append(args, "--cache", targetCache)
 
-		// Log debug information
 		log.Debug("Processing entry",
 			zap.String("job_id", jobID),
 			zap.String("request_url", entry.RequestURL),
@@ -132,10 +127,8 @@ func stagingWorker(entries <-chan RequestEntry, targetCache string, results chan
 			zap.String("local_object_destination", objectDestination),
 		)
 
-		// Invoke the binary
 		stdout, stderr, exitCode, err := pelican.InvokePelicanBinary(args)
 
-		// Prepare result
 		if err != nil {
 			errorMessage := stderr
 			// If stderr is empty, use the default error message
@@ -175,7 +168,7 @@ func stagingWorker(entries <-chan RequestEntry, targetCache string, results chan
 			}
 			objectSize := objectInfo.Size()
 
-			err = db.InsertStagingRecord(entry.RequestURL, targetCache, jobID, objectSize, exitCode, stdout, stderr)
+			err = db.InsertOrUpdateStagingRecord(entry.RequestURL, targetCache, jobID, objectSize, exitCode, stdout, stderr)
 			if err == nil {
 				log.Info("Entry processed successfully",
 					zap.String("job_id", jobID),

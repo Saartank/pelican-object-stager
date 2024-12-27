@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"os"
+	"time"
 
 	"github.com/pelicanplatform/pelicanobjectstager/logger"
 	"github.com/spf13/viper"
@@ -29,7 +30,9 @@ type Config struct {
 	}
 
 	Database struct {
-		Location string `mapstructure:"location"`
+		Location               string        `mapstructure:"location"`
+		RefreshInterval        time.Duration `mapstructure:"refresh_interval"`
+		MaxRecordStaleDuration time.Duration `mapstructure:"max_record_stale_duration"`
 	} `mapstructure:"database"`
 }
 

@@ -1,12 +1,14 @@
 package server
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
 	"github.com/pelicanplatform/pelicanobjectstager/config"
+	"github.com/pelicanplatform/pelicanobjectstager/dbrefresh"
 	"github.com/pelicanplatform/pelicanobjectstager/logger"
 	"github.com/pelicanplatform/pelicanobjectstager/server/object"
 )
@@ -14,6 +16,10 @@ import (
 var log = logger.With(zap.String("component", "server"))
 
 func StartServer() {
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	r := gin.New()
 
 	for _, mw := range middlewares {
@@ -24,6 +30,9 @@ func StartServer() {
 	object.RegisterObjectRoutes(r)
 
 	address := config.AppConfig.Server.Port
+
+	log.Debug("Starting LaunchPeriodicRefreshRecords...")
+	go dbrefresh.LaunchPeriodicRefreshRecords(ctx)
 
 	log.Info("Starting server",
 		zap.Int("port", address),
