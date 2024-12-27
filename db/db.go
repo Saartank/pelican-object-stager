@@ -1,6 +1,7 @@
 package db
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -23,6 +24,14 @@ type StagingRecord struct {
 	PelicanExitCode int       `gorm:"type:int"`                                          // Pelican client exit code as an integer
 	PelicanStdout   string    `gorm:"type:text"`                                         // Pelican client stdout as a string
 	PelicanStderr   string    `gorm:"type:text"`                                         // Pelican client stderr as a string
+}
+
+type StagingRecordLite struct {
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	PelicanURL     string    `gorm:"column:pelican_url" json:"pelican_url"`
+	StagingStorage string    `gorm:"column:staging_storage" json:"staging_storage"`
+	ObjectSize     int64     `gorm:"column:object_size" json:"object_size"`
+	UpdatedAt      time.Time `gorm:"column:updated_at" json:"updated_at"`
 }
 
 var (
@@ -88,4 +97,55 @@ func InsertOrUpdateStagingRecord(pelicanURL, stagingStorage, jobID string, objec
 	}
 
 	return nil
+}
+
+func GetStagingRecordLites() ([]StagingRecordLite, error) {
+	var records []StagingRecordLite
+
+	// GORM will automatically map fields in StagingRecordLite to database columns
+	err := DB.Model(&StagingRecord{}).Find(&records).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve staging record lites: %v", err)
+	}
+
+	return records, nil
+}
+
+func GetStagingStorageSizeMap() (map[string]int64, error) {
+	type Result struct {
+		StagingStorage string
+		TotalSize      int64
+	}
+	var results []Result
+
+	err := DB.Model(&StagingRecord{}).
+		Select("staging_storage, SUM(object_size) as total_size").
+		Group("staging_storage").
+		Scan(&results).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate storage sizes: %v", err)
+	}
+
+	// Convert the results to a map
+	storageSizeMap := make(map[string]int64)
+	for _, result := range results {
+		storageSizeMap[result.StagingStorage] = result.TotalSize
+	}
+
+	return storageSizeMap, nil
+}
+
+func GetStagingRecordByID(id uint) (*StagingRecord, error) {
+	var record StagingRecord
+
+	err := DB.First(&record, id).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to retrieve record with ID %d: %v", id, err)
+	}
+
+	return &record, nil
 }

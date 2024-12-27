@@ -2,11 +2,13 @@ package server
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"github.com/pelicanplatform/pelicanobjectstager/db"
 	"github.com/pelicanplatform/pelicanobjectstager/pelican"
 )
 
@@ -130,4 +132,82 @@ func handleHealthCheck(c *gin.Context) {
 		"message": "PelicanBinary is working",
 		"version": version,
 	})
+}
+
+func handleRecordsAll(c *gin.Context) {
+	// Retrieve all records
+	records, err := db.GetStagingRecordLites()
+	if err != nil {
+		log.Error("Failed to retrieve all staging records",
+			zap.Error(err),
+		)
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve records",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"records": records,
+	})
+}
+
+func handleStagingStoragesAll(c *gin.Context) {
+	storageSizeMap, err := db.GetStagingStorageSizeMap()
+	if err != nil {
+		log.Error("Failed to retrieve staging storage size map",
+			zap.Error(err),
+		)
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve storage size map",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"storage_sizes": storageSizeMap,
+	})
+}
+
+func handleGetRecordByID(c *gin.Context) {
+	// Parse the ID from the URL parameter
+	idParam := c.Param("id")
+	id, err := strconv.Atoi(idParam)
+	if err != nil {
+		log.Error("Invalid ID format",
+			zap.String("id", idParam),
+			zap.Error(err),
+		)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid ID format",
+		})
+		return
+	}
+
+	// Fetch the record from the database
+	record, err := db.GetStagingRecordByID(uint(id))
+	if err != nil {
+		log.Error("Failed to retrieve record",
+			zap.Int("id", id),
+			zap.Error(err),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve the record",
+		})
+		return
+	}
+
+	if record == nil {
+		log.Info("Record not found",
+			zap.Int("id", id),
+		)
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Record not found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, record)
 }

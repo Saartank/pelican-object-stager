@@ -12,5 +12,5 @@ log_level: debug
 
 database:
   location: /workspaces/dec_02/db.sqlite
-  refresh_interval: 10s
-  max_record_stale_duration: 5m
+  refresh_interval: 10m
+  max_record_stale_duration: 15m

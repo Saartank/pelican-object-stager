@@ -27,6 +27,10 @@ func StartServer() {
 	}
 	r.POST("/pelican", handleStartBinary)
 	r.GET("/health", handleHealthCheck)
+	r.GET("/records/all", handleRecordsAll)
+	r.GET("/records/stagingstorages/all", handleStagingStoragesAll)
+	r.GET("/records/:id", handleGetRecordByID)
+
 	object.RegisterObjectRoutes(r)
 
 	address := config.AppConfig.Server.Port
